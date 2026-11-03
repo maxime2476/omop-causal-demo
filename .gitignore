@@ -1,0 +1,40 @@
+# --- Données : jamais dans Git ---
+data/
+output/
+vocab/
+vocabulary/
+athena/
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+*.db
+*.zip
+*.csv.gz
+synthea/
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# --- R ---
+.Rhistory
+.RData
+.Rproj.user/
+
+# --- Divers ---
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,89 @@
+# Protocole d'essai cible émulé — phase A2.
+# Données SIMULÉES (Eunomia GiBleed) : exercice de méthode, aucune portée clinique.
+# Toute modification de ce fichier doit précéder l'examen des résultats.
+
+name: celecoxib_vs_diclofenac_gi_bleed
+database:
+  duckdb_path: data/gibleed.duckdb
+output_dir: output
+seed: 2024
+
+# Concepts : résolus par requête dans CONCEPT (nom + vocabulaire + classe, concept standard),
+# l'identifiant attendu n'est qu'une vérification. Les descendants sont pris via CONCEPT_ANCESTOR.
+concepts:
+  target:
+    label: celecoxib
+    concept_name: celecoxib
+    vocabulary_id: RxNorm
+    concept_class_id: Ingredient
+    expected_concept_id: 1118084
+  comparator:
+    label: diclofenac
+    concept_name: Diclofenac
+    vocabulary_id: RxNorm
+    concept_class_id: Ingredient
+    expected_concept_id: 1124300
+  outcome:
+    label: GI hemorrhage
+    concept_name: Gastrointestinal hemorrhage
+    vocabulary_id: SNOMED
+    concept_class_id: Clinical Finding
+    expected_concept_id: 192671
+
+# Éligibilité (appliquée dans cet ordre ; chaque étape alimente le flowchart d'attrition).
+cohort:
+  prior_observation_days: 365        # observation continue avant t0
+  exclude_prior_outcome: true        # critère survenu avant ou le jour de t0, tout l'historique
+  exclude_prior_other_drug: true     # exposition à l'autre molécule avant ou le jour de t0
+
+follow_up:
+  itt_days: 365                      # analyse principale « intention de traiter »
+  on_treatment_grace_days: 30        # sensibilité : fin d'exposition (drug_era) + 30 j
+
+covariates:
+  lookback_days: 365                 # conditions, médicaments, visites dans [t0-365, t0-1]
+  # Ajout au protocole initial (décidé avant tout résultat) : conditions à tout moment avant t0.
+  # Les facteurs de risque d'hémorragie de GiBleed (ulcère, colite…) sont surtout > 365 j.
+  include_condition_any_time_prior: true
+  min_prevalence: 0.01               # indicateurs binaires retenus si prévalence >= 1 % dans la cohorte
+
+propensity:
+  cv_folds: 5
+  c_grid: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]   # C de la logistique L2, choisi par validation croisée
+  caliper_sd: 0.2                    # caliper = 0,2 x écart-type du logit du PS
+  iptw_truncation_percentiles: [1, 99]
+
+balance:
+  smd_threshold: 0.1
+
+outcome_model:
+  min_events_per_arm: 10             # en dessous : pas de Cox, résultat signalé « événements insuffisants »
+  # Analyse principale pré-spécifiée : IPTW (ATE), ITT. Elle garde toute la cohorte, alors que
+  # l'appariement 1:1 sans remise écarte des traités quand les témoins sont moins nombreux.
+  primary_analysis: iptw_ate
+
+sensitivity:
+  # Approximation HR -> RR pour l'E-value : « événement rare » si incidence cumulée < seuil
+  # (VanderWeele 2017) ; sinon RR ≈ (1 - 0.5^sqrt(HR)) / (1 - 0.5^sqrt(1/HR)).
+  rare_outcome_threshold: 0.15
+  calipers: [0.05, 0.1, 0.2, 0.5]
+  truncations: [[0, 100], [1, 99], [5, 95]]
+  # Contrôles négatifs : liste proposée puis validée le 2026-11-02. Conditions présentes après t0,
+  # sans lien causal plausible avec un AINS. Exclus volontairement : infarctus (risque CV des AINS),
+  # anémie et affections digestives (liées au critère). Personnes ayant le contrôle dans les
+  # 365 j avant t0 exclues de l'analyse correspondante.
+  negative_control_prior_lookback_days: 365
+  negative_controls:
+    - {concept_id: 40481087, label: Viral sinusitis}
+    - {concept_id: 4112343, label: Acute viral pharyngitis}
+    - {concept_id: 260139, label: Acute bronchitis}
+    - {concept_id: 28060, label: Streptococcal sore throat}
+    - {concept_id: 4294548, label: Acute bacterial sinusitis}
+    - {concept_id: 257012, label: Chronic sinusitis}
+    - {concept_id: 81151, label: Sprain of ankle}
+    - {concept_id: 378001, label: Concussion without loss of consciousness}
+    - {concept_id: 4218389, label: Whiplash injury to neck}
+    - {concept_id: 4155034, label: Laceration of forearm}
+  # Sensibilité POST-HOC (ajoutée le 2026-11-02 après lecture des HR, en réponse au déséquilibre
+  # résiduel de l'IPTW) : C de la logistique choisi dans c_grid pour minimiser le max |SMD| après
+  # IPTW, sans utiliser le critère. L'analyse principale pré-spécifiée reste inchangée.
